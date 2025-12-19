@@ -1,0 +1,9 @@
+[33m4594eb0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to 4594eb0
+[33mbc940d9[m HEAD@{1}: commit: remove secret from .env; add .env to gitignore
+[33mba43530[m HEAD@{2}: commit: remove secret from .env; add .env to gitignore
+[33m0125d05[m HEAD@{3}: commit: env added in gitignore
+[33mc457b1d[m HEAD@{4}: reset: moving to c457b1d
+[33mc457b1d[m HEAD@{5}: reset: moving to HEAD~1
+[33mc5bb518[m HEAD@{6}: commit: first commit
+[33mc457b1d[m HEAD@{7}: commit: first commit
+[33m4594eb0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{8}: clone: from https://github.com/ArsalanAyaz88/drug-backend.git
