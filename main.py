@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import engine
@@ -23,6 +24,8 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix="/api/v1")
     # Fallback wiring for admin settings (avoids editing router.py)
     app.include_router(admin_endpoints.router, prefix="/api/v1/admin", tags=["admin"])
+    # Serve uploaded files (proteins etc.) statically
+    app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage")
 
     @app.on_event("startup")
     def on_startup():
