@@ -1,3 +1,5 @@
+from typing import Optional, Tuple
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -22,6 +24,8 @@ router = APIRouter()
 class DockRequest(BaseModel):
     protein_id: int
     molecule_id: int
+    center: Optional[Tuple[float, float, float]] = None
+    size: Optional[Tuple[float, float, float]] = None
 
 
 @router.post("/run", response_model=DockJobOut)
@@ -38,7 +42,10 @@ def run_docking(
         raise HTTPException(status_code=404, detail="Molecule or Protein not found")
 
     # Run Vina docking (CPU) and store pose
-    pose_path, score = dock_smiles_against_protein(mol.smiles, prot.path)
+    try:
+        pose_path, score = dock_smiles_against_protein(mol.smiles, prot.path, center=req.center, size=req.size)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Docking failed: {e}")
 
     job = DockJob(
         protein_id=req.protein_id,

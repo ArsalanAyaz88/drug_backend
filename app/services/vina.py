@@ -1,5 +1,7 @@
 from __future__ import annotations
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 from typing import Optional, Tuple
@@ -92,6 +94,22 @@ def _parse_size(val: Optional[str]) -> Tuple[float, float, float]:
         return (20.0, 20.0, 20.0)
 
 
+def _parse_vina_affinity(text: str) -> Optional[float]:
+    m = re.search(r"REMARK\s+VINA\s+RESULT:\s*([-+]?\d+(?:\.\d+)?)", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"RESULT:\s*([-+]?\d+(?:\.\d+)?)", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"^\s*1\s+([-+]?\d+(?:\.\d+)?)", text, flags=re.MULTILINE)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"Affinity:\s*([-+]?\d+(?:\.\d+)?)", text)
+    if m:
+        return float(m.group(1))
+    return None
+
+
 def prepare_ligand_pdbqt_from_smiles(smiles: str, out_path: str) -> None:
     from meeko import MoleculePreparation, PDBQTWriterLegacy
 
@@ -138,10 +156,24 @@ def prepare_receptor_pdbqt_from_protein(in_path: str, out_path: str) -> None:
     subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def run_vina(receptor_pdbqt: str, ligand_pdbqt: str, out_pdbqt: str, log_path: str) -> float:
-    cx, cy, cz = _parse_center(settings_provider.get("VINA_CENTER"))
-    sx, sy, sz = _parse_size(settings_provider.get("VINA_SIZE"))
-    exhaust = settings_provider.get("VINA_EXHAUSTIVENESS") or "8"
+def run_vina(
+    receptor_pdbqt: str,
+    ligand_pdbqt: str,
+    out_pdbqt: str,
+    log_path: str,
+    center: Optional[Tuple[float, float, float]] = None,
+    size: Optional[Tuple[float, float, float]] = None,
+    exhaustiveness: Optional[str] = None,
+) -> float:
+    if center is None:
+        cx, cy, cz = _parse_center(settings_provider.get("VINA_CENTER"))
+    else:
+        cx, cy, cz = center
+    if size is None:
+        sx, sy, sz = _parse_size(settings_provider.get("VINA_SIZE"))
+    else:
+        sx, sy, sz = size
+    exhaust = exhaustiveness or settings_provider.get("VINA_EXHAUSTIVENESS") or "8"
 
     vina = _vina_path()
     cmd = [
@@ -172,58 +204,49 @@ def run_vina(receptor_pdbqt: str, ligand_pdbqt: str, out_pdbqt: str, log_path: s
     if proc.returncode != 0:
         raise RuntimeError(f"Vina failed: {proc.stderr.strip() or proc.stdout.strip()}")
 
-    best = None
-    # Parse log
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                if "RESULT:" in line or ("Affinity:" in line and "kcal/mol" in line):
-                    # Typical vina output 'Affinity:  -7.4 (kcal/mol)'
-                    parts = line.replace("RESULT:", "").replace("Affinity:", "").split()
-                    for p in parts:
-                        try:
-                            val = float(p)
-                            best = val
-                            break
-                        except Exception:
-                            continue
-                    if best is not None:
-                        break
+    best: Optional[float] = None
+    try:
+        if os.path.exists(out_pdbqt):
+            with open(out_pdbqt, "r", encoding="utf-8", errors="ignore") as f:
+                best = _parse_vina_affinity(f.read())
+    except Exception:
+        best = None
+
+    if best is None and os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                best = _parse_vina_affinity(f.read())
+        except Exception:
+            pass
+
     if best is None:
-        # Fall back to scanning output
-        for stream in (proc.stdout.splitlines(), proc.stderr.splitlines()):
-            for line in stream:
-                if "kcal/mol" in line:
-                    toks = line.split()
-                    for t in toks:
-                        try:
-                            best = float(t)
-                            break
-                        except Exception:
-                            continue
-                    if best is not None:
-                        break
-            if best is not None:
-                break
+        best = _parse_vina_affinity((proc.stdout or "") + "\n" + (proc.stderr or ""))
+
     if best is None:
-        # If still not parsed, set a sentinel score
-        best = 0.0
+        raise RuntimeError(f"Vina ran but affinity could not be parsed. See log: {log_path}")
+
     return best
 
 
-def dock_smiles_against_protein(smiles: str, protein_file_rel: str) -> tuple[str, float]:
+def dock_smiles_against_protein(
+    smiles: str,
+    protein_file_rel: str,
+    center: Optional[Tuple[float, float, float]] = None,
+    size: Optional[Tuple[float, float, float]] = None,
+) -> tuple[str, float]:
     _ensure_dirs()
     # Build absolute paths
     protein_abs = os.path.abspath(protein_file_rel)
     base = os.path.splitext(os.path.basename(protein_abs))[0]
-    ligand_out = os.path.join(POSES_DIR, f"lig_{base}.pdbqt")
+    tag = hashlib.sha1(smiles.encode("utf-8")).hexdigest()[:10]
+    ligand_out = os.path.join(POSES_DIR, f"lig_{base}_{tag}.pdbqt")
     receptor_out = os.path.join(POSES_DIR, f"rec_{base}.pdbqt")
-    pose_out = os.path.join(POSES_DIR, f"pose_{base}.pdbqt")
-    log_out = os.path.join(POSES_DIR, f"vina_{base}.log")
+    pose_out = os.path.join(POSES_DIR, f"pose_{base}_{tag}.pdbqt")
+    log_out = os.path.join(POSES_DIR, f"vina_{base}_{tag}.log")
 
     prepare_ligand_pdbqt_from_smiles(smiles, ligand_out)
     prepare_receptor_pdbqt_from_protein(protein_abs, receptor_out)
-    score = run_vina(receptor_out, ligand_out, pose_out, log_out)
+    score = run_vina(receptor_out, ligand_out, pose_out, log_out, center=center, size=size)
 
     # Return pose path relative to CWD for consistency with other stored paths
     rel_pose = os.path.relpath(pose_out, start=os.getcwd())

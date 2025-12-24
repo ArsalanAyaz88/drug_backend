@@ -6,6 +6,8 @@ from app.api.deps import db_session, get_current_user
 from app.models.user import User
 from app.models.protein import Protein as ProteinModel
 from app.schemas.protein import ProteinOut
+from app.services.pockets import detect_pockets
+from pydantic import BaseModel
 from app.services.storage import save_protein_file
 
 router = APIRouter()
@@ -38,3 +40,29 @@ def list_proteins(
     db: Session = Depends(db_session), current_user: User = Depends(get_current_user)
 ):
     return db.query(ProteinModel).filter(ProteinModel.uploader_id == current_user.id).all()
+
+
+class Pocket(BaseModel):
+    center: tuple[float, float, float]
+    size: tuple[float, float, float]
+    method: str
+    note: str | None = None
+
+
+@router.get("/{protein_id}/pockets", response_model=List[Pocket])
+def get_protein_pockets(
+    protein_id: int,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+):
+    prot = (
+        db.query(ProteinModel)
+        .filter(ProteinModel.id == protein_id, ProteinModel.uploader_id == current_user.id)
+        .first()
+    )
+    if not prot:
+        raise HTTPException(status_code=404, detail="Protein not found")
+    pockets = detect_pockets(prot.path)
+    if not pockets:
+        raise HTTPException(status_code=404, detail="No pockets detected")
+    return pockets

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import auth, workspace, proteins, molecules, docking, admet, results
+from .endpoints import auth, workspace, proteins, molecules, docking, admet, results, pipeline
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -9,3 +9,4 @@ api_router.include_router(molecules.router, prefix="/molecules", tags=["molecule
 api_router.include_router(docking.router, prefix="/docking", tags=["docking"])
 api_router.include_router(admet.router, prefix="/admet", tags=["admet"])
 api_router.include_router(results.router, prefix="/results", tags=["results"])
+api_router.include_router(pipeline.router, prefix="/pipeline", tags=["pipeline"])
